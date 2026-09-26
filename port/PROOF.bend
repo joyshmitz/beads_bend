@@ -313,3 +313,65 @@ def Laws.agent_context_closed():
 # S4.350 the metadata refusal of goldens/error_dep_add_metadata_bad
 def Laws.metadata_refusal_closed():
   {==}
+
+# ---------------------------------------------------------------- equality is reflexive (for the quantified laws)
+# Base's comparisons are computed over 32-bit words, so reflexivity is proved by induction: Bool, Word(n), U32, then
+# String (whose comparison returns its two operands with the verdict, hence `rec_fin`)
+
+# S2.36 S4.41 S4.148 lemma: Bool.cmp is reflexive
+def bool_cmp_refl(b: Bool) -> {EQ{} == Bool.cmp(b, b) : Cmp}:
+  match b:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+# S2.36 S4.41 S4.148 lemma: Word.cmp is reflexive, by induction on the width
+def word_cmp_refl(n: Nat, +w: Word(n)) -> {EQ{} == Word.cmp(n, w, w) : Cmp}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      match w:
+        case WCon{+h, +t}:
+          %word_cmp_refl(p, t) : {EQ{} == Word.cmp.fin(h, h, _) : Cmp}
+          bool_cmp_refl(h)
+
+# S2.36 S4.41 S4.148 lemma: U32.cmp is reflexive
+def u32_cmp_refl(+x: U32) -> {EQ{} == U32.cmp(x, x) : Cmp}:
+  match x:
+    case U32{+w}:
+      word_cmp_refl(32n, w)
+
+# S2.36 S4.41 S4.148 lemma: String.cmp.rec keeps the tail's verdict, so its equality read is the tail's
+def rec_fin(a: Char, b: Char, r: (String & String) & Cmp) -> {String.eq.fin(r) == String.eq.fin(String.cmp.rec(a, b, r)) : Bool}:
+  match r:
+    case ((x, y), c):
+      {==}
+
+# S2.36 S4.41 S4.148 lemma: String.eq is reflexive, by induction on the string
+def string_eq_refl(+s: String) -> {True{} == String.eq(s, s) : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      match h:
+        case Chr{+x}:
+          %u32_cmp_refl(x) : {True{} == String.eq.fin(String.cmp.fin(t, t, ((Chr{x}, Chr{x}), _))) : Bool}
+          %rec_fin(Chr{x}, Chr{x}, String.cmp(t, t)) : {True{} == _ : Bool}
+          string_eq_refl(t)
+
+# S2.36 the head pair compares equal, so `dedup_put` drops the first copy
+def Laws.model_dedup_collapses(a, rest):
+  %string_eq_refl(a) : {Model.dedup_put(a, _, Model.dedup(a <> rest)) == Model.dedup(a <> rest) : List<&2, String>}
+  {==}
+
+# S4.148 the head group's key compares equal, so `tally_pick` counts it up
+def Laws.query_tally_same_key(k, n, rest):
+  %string_eq_refl(k) : {Query.tally_pick(k, n, rest, k, _, String.is_lt(k, k), Query.tally(rest, k)) == Query.Group{k, (n + 1 : U32)} <> rest : List<&2, Query.Group>}
+  {==}
+
+# S4.41 the head id compares equal, so the disjunction is true
+def Laws.resolve_stored_head(id, ids):
+  %string_eq_refl(id) : {(_ || Resolve.stored(ids, id)) == True{} : Bool}
+  {==}

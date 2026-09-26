@@ -379,3 +379,23 @@ law agent_context_closed:
 # type, the text and serde_json's message with its column
 law metadata_refusal_closed:
   {Edges.meta_of(Some{"{bad"}, "proj-ptp", "proj-mta", "blocks") == Edges.MetaBad{Create.invalid("metadata", "dependency metadata must be valid JSON for proj-ptp -> proj-mta (type=blocks); found \"{bad\": key must be a string at line 1 column 2")} : Edges.Meta}
+
+# S2.36 quantified: two adjacent equal words collapse to one, for every word and every rest of the list
+law model_dedup_collapses:
+  for +a: String
+  for +rest: List<&2, String>
+  {Model.dedup(a <> a <> rest) == Model.dedup(a <> rest) : List<&2, String>}
+
+# S4.148 quantified: counting a key that heads the groups adds one to that group and leaves the rest as it was, for
+# every key, count and rest
+law query_tally_same_key:
+  for +k: String
+  for +n: U32
+  for +rest: List<&2, Query.Group>
+  {Query.tally(Query.Group{k, n} <> rest, k) == Query.Group{k, (n + 1 : U32)} <> rest : List<&2, Query.Group>}
+
+# S4.41 quantified: an id is stored when it heads the stored ids, for every id and every other ids
+law resolve_stored_head:
+  for +id: String
+  for +ids: List<&2, String>
+  {Resolve.stored(id <> ids, id) == True{} : Bool}
