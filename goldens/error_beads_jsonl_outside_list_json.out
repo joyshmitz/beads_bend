@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "CONFIG_ERROR",
+    "message": "Configuration error: <external-path sha256=bba8f3ac0b7a57608899378746d61391297ad55d3f63520482ea4f94f3685743> is outside .beads; pass --allow-external-jsonl to authorize it",
+    "hint": null,
+    "retryable": false,
+    "context": null
+  }
+}

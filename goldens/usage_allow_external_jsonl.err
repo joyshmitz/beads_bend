@@ -1,0 +1,7 @@
+error: unexpected argument '--allow-external-jsonl' found
+
+  tip: a similar argument exists: '--allow-stale'
+
+Usage: br count --allow-stale
+
+For more information, try '--help'.

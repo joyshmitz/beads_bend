@@ -1,0 +1,1 @@
+Error: Configuration error: <external-path sha256=6addbcfbfd70e3db76e8bf4ef5518c6e7abb03e6efca7e20e66eadc9e13aad5d> is outside .beads; pass --allow-external-jsonl to authorize it

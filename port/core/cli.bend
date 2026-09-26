@@ -646,6 +646,8 @@ def check_pick(o: Surface.Opt, +v: String, c: Surface.Check) -> String:
       invalid(o, v, ranged_why(read_signed(codes(v)), lo_mag, hi_mag, lo_text))
     case Surface.Choice{+values}:
       choice_error(o, v, values, has(values, v))
+    case Surface.Path{}:
+      Bool.pick(String, String.is_empty(v), "error: a value is required for '" ++ shown(o) ++ "' but none was supplied\n" ++ tail(), "")
 
 # S1.21 S1.22 S1.23 (spec twin) the argument parser's own refusal of a value, "" when it accepts it
 def check_error(+o: Surface.Opt, v: String) -> String:

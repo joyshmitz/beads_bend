@@ -2,7 +2,8 @@
 # Four steps in order: the exact id; the default prefix put in front of a word
 # without `-`; a substring of the hash part; not found. Several substring
 # candidates are a refusal that lists them in ascending byte order (DISC-005).
-# The lower-casing is ASCII here; the original's is full Unicode (S4.36, OQ-118).
+# The lower-casing is full Unicode on the original; here it is ASCII plus the one code point whose Unicode lower case
+# is an ASCII id character (U+212A), which gives the same lookup outcome (S4.36, OQ-118).
 # Nothing here consults the original.
 import Base
 import ./failure.bend as Failure
@@ -24,13 +25,20 @@ def lower_char(+c: U32, up: Bool) -> U32:
     case False{}:
       c
 
+# S4.36 (spec twin) one code point lower-cased for lookup: ASCII `A`–`Z`, and the KELVIN SIGN (U+212A), whose
+# Unicode lower case is ASCII `k`. Every other code point whose Unicode lower case differs lower-cases to a non-ASCII
+# text, which no stored id (`[a-z0-9.-]`) contains, so the lookup's outcome equals the original's full Unicode
+# lower-casing (round of 2026-09-26: `show proj-mKh` finds `proj-mkh`); messages echo the input as typed
+def lookup_char(+c: U32) -> U32:
+  Bool.pick(U32, U32.is_eq(c, 8490), 107, lower_char(c, ((c >= 65 : U32) && (c <= 90 : U32))))
+
 # S4.36 (spec twin) the input lower-cased for lookup
 def lowered(s: String) -> String:
   match s:
     case SNil{}:
       ""
     case SCon{Chr{+c}, rest}:
-      SCon{Chr{lower_char(c, ((c >= 65 : U32) && (c <= 90 : U32)))}, lowered(rest)}
+      SCon{Chr{lookup_char(c)}, lowered(rest)}
 
 # S4.28 (spec twin) a REVERSED code-point list as a String, in order
 def text_rev(rev: List<&2, U32>, acc: String) -> String:

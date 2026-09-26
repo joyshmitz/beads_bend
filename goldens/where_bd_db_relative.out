@@ -1,0 +1,4 @@
+/mnt/proj/.beads
+  prefix: proj
+  database: /mnt/proj/.beads/x.db
+  jsonl: /mnt/proj/.beads/issues.jsonl

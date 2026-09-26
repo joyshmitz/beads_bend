@@ -10,12 +10,14 @@ import Base
 # S1.21 S1.22 S1.23 (data) how the argument parser itself checks a value:
 # not at all; as an unsigned 64-bit integer; as a signed 64-bit integer that
 # must then lie in a range (magnitudes as digit strings, plus the lower bound
-# as the message prints it); or as one of a fixed list of words
+# as the message prints it); as one of a fixed list of words; or as a path,
+# which may not be empty (S1.20)
 type Check is Data:
   Free{}
   Unsigned{}
   Ranged{lo_mag: String, hi_mag: String, lo_text: String}
   Choice{values: List<&2, String>}
+  Path{}
 
 # S1.3 S1.31 (data) one option. `short` is a code point (0 = none), `alias` a second long
 # name ("" = none), `value` the placeholder the messages print ("" = the option takes no value)
@@ -86,6 +88,11 @@ def many_s(+key: String, short: U32) -> Opt:
 def checked(+key: String, check: Check) -> Opt:
   Opt{key, 0, "", placeholder(key), False{}, False{}, False{}, check}
 
+# S1.20 (data) a path-valued option: the argument parser refuses an empty value as a missing one (`--db ""`,
+# `--db=`, `create --file ""`, `update --description-file ""`, `delete --from-file ""`, `comments add --file ""`)
+def path_opt(+key: String, short: U32, value: String) -> Opt:
+  Opt{key, short, "", value, False{}, False{}, False{}, Path{}}
+
 # S1.36 (data) an option whose placeholder is not derived from its name
 def named(key: String, short: U32, value: String, repeat: Bool) -> Opt:
   Opt{key, short, "", value, repeat, False{}, False{}, Free{}}
@@ -124,7 +131,7 @@ def directions() -> Check:
 
 # S1.3 (data) the twelve global options, in declaration order; every level accepts them
 def globals() -> List<&2, Opt>:
-  one("db") <> one("actor") <> flag("json") <> flag("no-daemon") <> flag("no-auto-flush") <> flag("no-auto-import") <> flag("allow-stale") <> checked("lock-timeout", Unsigned{}) <> flag("no-db") <> Opt{"verbose", 118, "", "", True{}, False{}, False{}, Free{}} <> flag_s("quiet", 113) <> flag("no-color") <> Nil{}
+  path_opt("db", 0, placeholder("db")) <> one("actor") <> flag("json") <> flag("no-daemon") <> flag("no-auto-flush") <> flag("no-auto-import") <> flag("allow-stale") <> checked("lock-timeout", Unsigned{}) <> flag("no-db") <> Opt{"verbose", 118, "", "", True{}, False{}, False{}, Free{}} <> flag_s("quiet", 113) <> flag("no-color") <> Nil{}
 
 # S1.29 (data) `-h`/`--help` exists on every level
 def help_opt() -> Opt:
@@ -144,7 +151,7 @@ def list_opts() -> List<&2, Opt>:
 
 # S1.36 (data) the options of `create`
 def create_opts() -> List<&2, Opt>:
-  named("title", 0, "TITLE_FLAG", False{}) <> one_s("type", 116) <> one("slug") <> one_s("priority", 112) <> dashed("description", 100, "body") <> named("description-file", 0, "PATH", False{}) <> one_s("assignee", 97) <> one("owner") <> many_s("labels", 108) <> one("parent") <> many("deps") <> Opt{"estimate", 101, "", "ESTIMATE", False{}, False{}, False{}, i32()} <> one("due") <> one("defer") <> one("external-ref") <> flag("ephemeral") <> one_s("status", 115) <> dashed("acceptance-criteria", 0, "acceptance") <> dashed("prerequisites", 0, "") <> one("agent-context") <> flag("dry-run") <> flag("silent") <> one_s("file", 102) <> attribution()
+  named("title", 0, "TITLE_FLAG", False{}) <> one_s("type", 116) <> one("slug") <> one_s("priority", 112) <> dashed("description", 100, "body") <> path_opt("description-file", 0, "PATH") <> one_s("assignee", 97) <> one("owner") <> many_s("labels", 108) <> one("parent") <> many("deps") <> Opt{"estimate", 101, "", "ESTIMATE", False{}, False{}, False{}, i32()} <> one("due") <> one("defer") <> one("external-ref") <> flag("ephemeral") <> one_s("status", 115) <> dashed("acceptance-criteria", 0, "acceptance") <> dashed("prerequisites", 0, "") <> one("agent-context") <> flag("dry-run") <> flag("silent") <> path_opt("file", 102, placeholder("file")) <> attribution()
 
 # S1.38 (data) the options of `q`
 def q_opts() -> List<&2, Opt>:
@@ -152,7 +159,7 @@ def q_opts() -> List<&2, Opt>:
 
 # S1.39 (data) the options of `update`
 def update_opts() -> List<&2, Opt>:
-  one("title") <> dashed("description", 100, "body") <> named("description-file", 0, "PATH", False{}) <> dashed("design", 0, "") <> Opt{"acceptance-criteria", 0, "acceptance", "ACCEPTANCE_CRITERIA", False{}, False{}, True{}, Free{}} <> dashed("prerequisites", 0, "") <> named_dashed("check-acceptance", 0, "ITEMS", True{}) <> named_dashed("uncheck-acceptance", 0, "ITEMS", True{}) <> named_dashed("add-acceptance", 0, "TEXT", True{}) <> dashed("notes", 0, "") <> named_dashed("append-notes", 0, "TEXT", True{}) <> named_dashed("transition-comment", 0, "COMMENT", False{}) <> one_s("status", 115) <> one_s("priority", 112) <> one_s("type", 116) <> one("assignee") <> one("owner") <> flag("claim") <> flag("force") <> one("due") <> one("defer") <> checked("estimate", i32()) <> many("add-label") <> many("remove-label") <> Opt{"set-labels", 0, "labels", "SET_LABELS", True{}, False{}, False{}, Free{}} <> one("parent") <> one("external-ref") <> one("source-repo") <> one("source-repo-path") <> one("agent-context") <> one("session") <> attribution()
+  one("title") <> dashed("description", 100, "body") <> path_opt("description-file", 0, "PATH") <> dashed("design", 0, "") <> Opt{"acceptance-criteria", 0, "acceptance", "ACCEPTANCE_CRITERIA", False{}, False{}, True{}, Free{}} <> dashed("prerequisites", 0, "") <> named_dashed("check-acceptance", 0, "ITEMS", True{}) <> named_dashed("uncheck-acceptance", 0, "ITEMS", True{}) <> named_dashed("add-acceptance", 0, "TEXT", True{}) <> dashed("notes", 0, "") <> named_dashed("append-notes", 0, "TEXT", True{}) <> named_dashed("transition-comment", 0, "COMMENT", False{}) <> one_s("status", 115) <> one_s("priority", 112) <> one_s("type", 116) <> one("assignee") <> one("owner") <> flag("claim") <> flag("force") <> one("due") <> one("defer") <> checked("estimate", i32()) <> many("add-label") <> many("remove-label") <> Opt{"set-labels", 0, "labels", "SET_LABELS", True{}, False{}, False{}, Free{}} <> one("parent") <> one("external-ref") <> one("source-repo") <> one("source-repo-path") <> one("agent-context") <> one("session") <> attribution()
 
 # S1.42 (data) the options of `close`
 def close_opts() -> List<&2, Opt>:
@@ -172,7 +179,7 @@ def undefer_opts() -> List<&2, Opt>:
 
 # S1.46 (data) the options of `delete`
 def delete_opts() -> List<&2, Opt>:
-  one("reason") <> one("from-file") <> flag("cascade") <> flag("force") <> flag("hard") <> flag("dry-run") <> Nil{}
+  one("reason") <> path_opt("from-file", 0, placeholder("from-file")) <> flag("cascade") <> flag("force") <> flag("hard") <> flag("dry-run") <> Nil{}
 
 # S1.35 (data) the options of `show`
 def show_opts() -> List<&2, Opt>:
@@ -288,7 +295,7 @@ def cmd_at(n: U32) -> Cmd:
     case 30:
       Cmd{"comments", flag("wrap") <> Nil{}, Pos{"ID", False{}, False{}} <> Nil{}, Nil{}, comments_names(), False{}}
     case 31:
-      Cmd{"comments add", one_s("file", 102) <> one("author") <> dashed("message", 109, "content") <> Nil{}, Pos{"ID", True{}, False{}} <> Pos{"TEXT", False{}, True{}} <> Nil{}, Nil{}, Nil{}, False{}}
+      Cmd{"comments add", path_opt("file", 102, placeholder("file")) <> one("author") <> dashed("message", 109, "content") <> Nil{}, Pos{"ID", True{}, False{}} <> Pos{"TEXT", False{}, True{}} <> Nil{}, Nil{}, Nil{}, False{}}
     case 32:
       Cmd{"comments list", flag("wrap") <> Nil{}, Pos{"ID", True{}, False{}} <> Nil{}, Nil{}, Nil{}, False{}}
     case 33:

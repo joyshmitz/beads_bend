@@ -24,6 +24,7 @@ import ./edges.bend as Edges
 import ./labels.bend as Labels
 import ./remove.bend as Remove
 import ./prefix.bend as Prefix
+import ./sha256.bend as Sha
 
 # S8.5 (data) one environment variable as the shell read it: its name and its value ("" when it is not set)
 type Var is Data:
@@ -39,9 +40,9 @@ type Inputs is Data:
 
 # S1.57–S1.67 S8.5 S5.115 (data) the environment variables the core reads, in the order the shell reads them:
 # the actor ladders (S1.64, S1.65), the output format (S1.61), the pinned instant of DISC-001, the workspace
-# override of S2.4, and the wrap width of `show`
+# override of S2.4, the wrap width of `show`, the store override of S1.60 and the database overrides of S2.1
 def env_names() -> List<&2, String>:
-  ["USER", "BD_ACTOR", "BEADS_ACTOR", "LOGNAME", "USERNAME", "BR_OUTPUT_FORMAT", "TOON_DEFAULT_FORMAT", "BEADS_BEND_NOW", "BEADS_DIR", "BEADS_RUST_SPEC", "COLUMNS"]
+  ["USER", "BD_ACTOR", "BEADS_ACTOR", "LOGNAME", "USERNAME", "BR_OUTPUT_FORMAT", "TOON_DEFAULT_FORMAT", "BEADS_BEND_NOW", "BEADS_DIR", "BEADS_RUST_SPEC", "COLUMNS", "BEADS_JSONL", "BD_DB", "BD_DATABASE", "BEADS_DB"]
 
 # S8.5 (spec twin) the value of a variable; one that is not set, or was not read, is the empty string
 def env_of(env: List<&2, Var>, +name: String) -> String:
@@ -1676,73 +1677,11 @@ def format_flag(+opts: List<&2, Cli.Occ>) -> String:
 def csv_mode(+opts: List<&2, Cli.Occ>, +env: List<&2, Var>, json: Bool) -> Bool:
   (Bool.not(json) && (String.eq(format_flag(opts), "csv") || (String.is_empty(format_flag(opts)) && String.eq(format_first(format_word(env_of(env, "BR_OUTPUT_FORMAT")), format_word(env_of(env, "TOON_DEFAULT_FORMAT"))), "csv"))))
 
-# S1 S4 S5 (spec twin) one ported command on a loaded store. `show` reads the file's records as they are
-# (S2.38, S2.39); every other command reads the loaded model (Store.model). `n` is the command's number
-# (`command_number`); 0 is a command that is not ported, which answers the port's own failure
-def command_at(n: U32, c: Call, issues: List<&2, Model.Issue>, +prefix: String) -> Outcome:
-  match n c:
-    case 1 Call{path, +opts, words, +json, quiet, touched, +env, cwd}:
-      list_cmd(opts, Store.model(issues), json, csv_mode(opts, env, json), quiet, False{}, Show.pinned(now_of(env)))
-    case 2 Call{path, +opts, words, json, quiet, touched, env, cwd}:
-      count_cmd(opts, Store.model(issues), json, quiet, Nat.is_gt(List.length(&2, String, selectors(opts)), 1n))
-    case 3 Call{path, opts, words, +json, quiet, touched, +env, cwd}:
-      shown(Show.run(words, issues, touched_text(Bytes.decode(touched)), env_of(env, "USER"), now_of(env), Show.width_of(env_of(env, "COLUMNS"), Cli.given(opts, "no-wrap")), prefix, json), json, quiet)
-    case 4 Call{path, +opts, +words, +json, quiet, touched, +env, cwd}:
-      search_cmd(opts, Store.model(issues), first_word(words), json, csv_mode(opts, env, json), quiet, String.is_empty(first_word(words)), U32.is_eq(Query.sort_key(Cli.value(opts, "sort")), 9))
-    case 5 Call{path, +opts, words, json, quiet, touched, env, cwd}:
-      ready_cmd(opts, Store.model(issues), env, json, quiet, prefix)
-    case 6 Call{path, +opts, words, json, quiet, touched, env, cwd}:
-      blocked_cmd(opts, Store.model(issues), json, quiet, Cli.given(opts, "detailed"), spec_of(env))
-    case 7 Call{path, +opts, words, json, quiet, touched, env, cwd}:
-      stats_cmd(opts, Store.model(issues), env, json, quiet, Cli.given(opts, "activity"))
-    case 8 Call{path, opts, words, json, quiet, touched, env, cwd}:
-      dep_list_cmd(opts, Store.model(issues), first_word(words), prefix, json, quiet)
-    case 9 Call{path, opts, words, json, quiet, touched, env, cwd}:
-      dep_tree_cmd(opts, Store.model(issues), first_word(words), prefix, json, quiet)
-    case 10 Call{path, +opts, words, +json, quiet, touched, env, cwd}:
-      viewed(Views.dep_cycles(Store.model(issues), Cli.given(opts, "blocking-only"), Cli.given(opts, "include-closed"), json), json, quiet)
-    case 11 Call{path, opts, words, json, quiet, touched, env, cwd}:
-      label_list_cmd(Store.model(issues), words, prefix, json, quiet)
-    case 12 Call{path, opts, words, +json, quiet, touched, env, cwd}:
-      viewed(Views.label_list_all(Store.model(issues), json), json, quiet)
-    case 13 Call{path, opts, words, json, quiet, touched, env, cwd}:
-      comments_list_cmd(Store.model(issues), words, prefix, json, quiet)
-    case 14 Call{path, opts, words, +json, quiet, touched, env, cwd}:
-      viewed(Views.epic_status(Store.model(issues), Cli.given(opts, "eligible-only"), json, spec_of(env)), json, quiet)
-    case 15 Call{path, opts, words, +json, quiet, touched, +env, +cwd}:
-      viewed(Views.whereabouts(beads_dir_of(env, cwd), Prefix.reported(Prefix.configured(env_of(env, ".beads/config.yaml")), issues), json, (Bool.not(String.is_empty(String.trim(env_of(env, "BEADS_DIR")))) && Bool.not(String.starts_with(env_of(env, "BEADS_DIR"), "/")))), json, quiet)
-    case 16 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      create_cmd(Show.pinned(now_of(env)), opts, words, issues, env, cwd, json, quiet, Cli.given(opts, "file"), False{})
-    case 17 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      create_cmd(Show.pinned(now_of(env)), opts, words, issues, env, cwd, json, quiet, False{}, True{})
-    case 19 Call{path, +opts, words, +json, quiet, touched, +env, cwd}:
-      bypassed(bypass_refusal(opts), json, transition(0, Show.pinned(now_of(env)), False{}, Show.wanted(words, touched_text(Bytes.decode(touched))), opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet))
-    case 20 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      transition(1, Show.pinned(now_of(env)), False{}, Show.wanted(words, touched_text(Bytes.decode(touched))), opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
-    case 21 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      transition(2, Show.pinned(now_of(env)), False{}, words, opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
-    case 22 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      transition(3, Show.pinned(now_of(env)), False{}, words, opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
-    case 18 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      update_cmd(Show.pinned(now_of(env)), opts, Show.wanted(words, touched_text(Bytes.decode(touched))), issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet, Create.context_of(Cli.value(opts, "agent-context")), terminal_word(Model.lowered(String.trim(Maybe.default(&2, String, Cli.value(opts, "status"), "")))), file_read(env, Cli.value(opts, "description-file")))
-    case 23 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      edge_cmd(True{}, Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
-    case 24 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      edge_cmd(False{}, Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
-    case 25 Call{path, opts, words, json, quiet, touched, +env, cwd}:
-      label_cmd(True{}, Show.pinned(now_of(env)), opts, words, issues, prefix, json, quiet)
-    case 26 Call{path, opts, words, json, quiet, touched, +env, cwd}:
-      label_cmd(False{}, Show.pinned(now_of(env)), opts, words, issues, prefix, json, quiet)
-    case 27 Call{path, opts, words, json, quiet, touched, +env, cwd}:
-      rename_cmd(Show.pinned(now_of(env)), words, issues, json, quiet)
-    case 28 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      comment_cmd(Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), author_env(env)), prefix, json, quiet, False{}, file_read(env, Cli.value(opts, "file")))
-    case 30 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
-      epic_close_cmd(Show.pinned(now_of(env)), opts, Store.model(issues), json, quiet, actor_of(Cli.value(opts, "actor"), actor_env(env)))
-    case 29 Call{path, +opts, words, json, quiet, +touched, +env, cwd}:
-      delete_cmd(Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet, touched_text(Bytes.decode(touched)), file_read(env, Cli.value(opts, "from-file")))
-    case _ Call{path, opts, words, json, quiet, touched, env, cwd}:
-      failed(Failure.unported(), json)
+# S1.3 S2.1 (spec twin) the options of a call
+def opts_of(c: Call) -> List<&2, Cli.Occ>:
+  match c:
+    case Call{path, opts, words, json, quiet, touched, env, cwd}:
+      opts
 
 # S1 S4 S5 (spec twin) the words that name the command
 def path_of(c: Call) -> String:
@@ -1989,9 +1928,225 @@ def redirect_failure(+reason: String, +beads_dir: String, wrap: Bool) -> Failure
   Bool.pick(Failure.Failure, (Bool.not(wrap) || String.is_empty(String.trim(beads_dir)) || Bool.not((String.starts_with(reason, "Redirect target not found") || String.starts_with(reason, "Redirect target must be")))), Failure.Failure{"CONFIG_ERROR", "Configuration error: " ++ reason, None{}, False{}, Nil{}, 7}, Failure.Failure{"CONFIG_ERROR", "BEADS_DIR is invalid: Configuration error: " ++ reason, None{}, False{}, [Failure.CtxMember{"wrapper_context", Failure.CStr{"BEADS_DIR is invalid"}}], 7})
 
 # S5.1 S8.30 (spec twin) where a file change lands: the core names `.beads/<file>`, the shell writes it inside the
-# directory discovery found (which may be `_beads`, or `BEADS_DIR`)
-def relocated(+ws: String, +path: String) -> String:
-  Bool.pick(String, String.starts_with(path, ".beads/"), inside(ws, String.drop(path, 7n)), path)
+# directory discovery found (which may be `_beads`, or `BEADS_DIR`); the store itself lands at `store`, the path the
+# shell read it from (`BEADS_JSONL`, S1.60)
+def relocated(+ws: String, +store: String, +path: String) -> String:
+  Bool.pick(String, String.eq(path, ".beads/issues.jsonl"), store, Bool.pick(String, String.starts_with(path, ".beads/"), inside(ws, String.drop(path, 7n)), path))
+
+# ---------------------------------------------------------------- store-path overrides (S1.60, S2.1, S2.9; OQ-137)
+
+# S1.60 (spec twin) `BEADS_JSONL` when it does not trim to empty, as given (never trimmed: `" /mnt/proj/.beads/x"`
+# is a relative path); "" otherwise (`env_beads_jsonl_blank`)
+def jsonl_given(+env: List<&2, Var>) -> String:
+  Bool.pick(String, String.is_empty(String.trim(env_of(env, "BEADS_JSONL"))), "", env_of(env, "BEADS_JSONL"))
+
+# S1.60 S8.12 (spec twin) the store file the shell reads and writes: `<dir>/issues.jsonl`, or `BEADS_JSONL` made
+# absolute against the working directory and read component by component (`..` kept, as the refusals below see it)
+def store_file(+dir: String, +cwd: String, +env: List<&2, Var>) -> String:
+  Bool.pick(String, String.is_empty(jsonl_given(env)), inside(dir, "issues.jsonl"), components_kept(absolute(jsonl_given(env), cwd)))
+
+# S1.60 S8.12 (spec twin) what the shell opens to test the store's directory: `<parent>/.`
+def store_dir(+file: String) -> String:
+  parent_dir(file) ++ "/."
+
+# S1.60 S8.13 (spec twin) a test's answer as the value the shell passes (`BEADS_BEND_STORE_DIR`): "1" when it opened
+def opened(ok: Bool) -> String:
+  match ok:
+    case True{}:
+      "1"
+    case False{}:
+      ""
+
+# S1.60 (spec twin) a path as the original's refusals name it without printing it: the SHA-256 of its text as given
+def external(+path: String) -> String:
+  "<external-path sha256=" ++ Sha.hex(Sha.digest(Bytes.utf8(path))) ++ ">"
+
+# S1.60 (spec twin) is a path the directory itself or inside it
+def within(+path: String, +dir: String) -> Bool:
+  (String.eq(path, dir) || String.starts_with(path, dir ++ "/"))
+
+# S1.60 (spec twin) does a path have a `..` component
+def has_up(parts: List<&2, String>) -> Bool:
+  match parts:
+    case Nil{}:
+      False{}
+    case Con{p, rest}:
+      (String.eq(p, "..") || has_up(rest))
+
+# S1.60 (spec twin) the extension of a file name: what follows its last `.`; `none` without one (`env_beads_jsonl_noext`)
+def ext_of(c: Resolve.Cut) -> String:
+  match c:
+    case Resolve.Cut{left, right, True{}}:
+      right
+    case Resolve.Cut{left, right, False{}}:
+      "none"
+
+# S1.60 (spec twin) what follows the last separator of a `Resolve.cut_last`: its right half, which is the whole text
+# when the separator is absent (the left half is then empty)
+def remainder_after(c: Resolve.Cut) -> String:
+  match c:
+    case Resolve.Cut{left, right, hit}:
+      right
+
+# S1.60 (spec twin) the extension of a path's last component
+def file_ext(+path: String) -> String:
+  ext_of(Resolve.cut_last(remainder_after(Resolve.cut_last(path, 47)), 46))
+
+# S1.60 (spec twin) the extensions a store path may carry (the list the refusal prints, case-sensitive:
+# `x.JSONL` is refused), and `.jsonl.tmp`
+def ext_allowed(+path: String, +ext: String) -> Bool:
+  (Model.listed_word(["db", "db-wal", "db-wal-cert", "db-wal-cert-head", "db-shm", "db-journal", "db-fsqlite-ns-gate", "db-fsqlite-ns-use", "jsonl"], ext) || String.ends_with(path, ".jsonl.tmp"))
+
+# S1.60 (spec twin) a store whose directory is missing: an absolute value is hashed, a relative one quoted
+def jsonl_unreachable(+given: String, parent_ok: Bool) -> String:
+  match parent_ok:
+    case True{}:
+      ""
+    case False{}:
+      Bool.pick(String, String.starts_with(given, "/"), "Could not securely traverse JSONL source " ++ external(given) ++ ": No such file or directory (os error 2)", "Failed to canonicalize path '" ++ given ++ "': No such file or directory (os error 2)")
+
+# S1.60 (spec twin) the checks after the path lies within the workspace directory, in the original's order: a `..`
+# component, the directory itself, the extension, a missing directory
+def jsonl_shaped(+given: String, +store: String, +dir: String, parent_ok: Bool) -> String:
+  Bool.pick(String, has_up(String.split(store, Chr{47})), "Path '" ++ given ++ "' contains traversal sequences", Bool.pick(String, String.eq(store, dir), "Path '" ++ given ++ "' must be a regular file", Bool.pick(String, ext_allowed(store, file_ext(store)), jsonl_unreachable(given, parent_ok), "Path '" ++ given ++ "' has disallowed extension '" ++ file_ext(store) ++ "' (allowed: [\"db\", \"db-wal\", \"db-wal-cert\", \"db-wal-cert-head\", \"db-shm\", \"db-journal\", \"db-fsqlite-ns-gate\", \"db-fsqlite-ns-use\", \"jsonl\", \"jsonl.tmp\"], plus pid-scoped '*.jsonl.<pid>.tmp')")))
+
+# S1.60 (spec twin) why a `BEADS_JSONL` store is refused, "" when it is not: outside the workspace directory first
+# (the value hashed as given, `env_beads_jsonl_outside`), then the shape checks. `--allow-external-jsonl` is not a flag
+# of the pinned original (`env_beads_jsonl_outside_allow` is a usage refusal)
+def jsonl_problem(unset: Bool, +given: String, +store: String, +dir: String, parent_ok: Bool) -> String:
+  match unset:
+    case True{}:
+      ""
+    case False{}:
+      Bool.pick(String, within(store, dir), jsonl_shaped(given, store, dir, parent_ok), external(given) ++ " is outside .beads; pass --allow-external-jsonl to authorize it")
+
+# S2.9 (spec twin) the first of several values that is not empty (never trimmed: `BD_DB=" "` is named)
+def first_given(vals: List<&2, String>) -> String:
+  match vals:
+    case Nil{}:
+      ""
+    case Con{+v, rest}:
+      Bool.pick(String, String.is_empty(v), first_given(rest), v)
+
+# S2.1 S2.9 (spec twin) the database override a command was given: `--db`, else the first non-empty of `BD_DB`,
+# `BD_DATABASE`, `BEADS_DB`
+def db_named(+opts: List<&2, Cli.Occ>, +env: List<&2, Var>) -> String:
+  first_given([Maybe.default(&2, String, Cli.value(opts, "db"), ""), env_of(env, "BD_DB"), env_of(env, "BD_DATABASE"), env_of(env, "BEADS_DB")])
+
+# S2.1 (spec twin) an absolute path up to its first `.beads` or `_beads` component; "" when it has none. `acc` holds
+# the components before, REVERSED
+def beads_upto(parts: List<&2, String>, +acc: List<&2, String>) -> String:
+  match parts:
+    case Nil{}:
+      ""
+    case Con{+p, rest}:
+      Bool.pick(String, (String.eq(p, ".beads") || String.eq(p, "_beads")), "/" ++ String.join(List.reverse(&2, String, p <> acc), "/"), beads_upto(rest, p <> acc))
+
+# S2.1 (spec twin) the `.beads` directory a database override names by a component, "" when it names none
+def db_beads(+db: String, +cwd: String) -> String:
+  beads_upto(kept_parts(String.split(components_kept(absolute(db, cwd)), Chr{47})), Nil{})
+
+# S2.9 (spec twin) the no-workspace refusal under a database override: an override whose `.beads` component names a
+# directory that was not found is CONFIG_ERROR exit 7 (`error_db_override_missing_beads`); any other is
+# NOT_INITIALIZED with a wrapper (`error_no_workspace_db_override`)
+def db_unfound(+db: String, +beads: String) -> Failure.Failure:
+  Bool.pick(Failure.Failure, String.is_empty(beads), Failure.Failure{"NOT_INITIALIZED", "Cannot resolve the project .beads directory for database override '" ++ db ++ "'; run from the target workspace or set BEADS_DIR: Beads not initialized: run 'br init' first", Some{"Run: br init"}, False{}, [Failure.CtxMember{"wrapper_context", Failure.CStr{"Cannot resolve the project .beads directory for database override '" ++ db ++ "'; run from the target workspace or set BEADS_DIR"}}], 2}, Failure.Failure{"CONFIG_ERROR", "Configuration error: database override '" ++ db ++ "' not found or not a .beads directory: " ++ beads, None{}, False{}, Nil{}, 7})
+
+# S2.1 (spec twin) the directory of the database a command overrides, "" without an override: `--db` against the
+# working directory, else `BD_DB` against the workspace directory (`BD_DB=x.db` is `<dir>/x.db`, as `where` prints
+# it). `BD_DATABASE` and `BEADS_DB` only name the no-workspace refusal
+def db_dir(+opts: List<&2, Cli.Occ>, +env: List<&2, Var>, +cwd: String, +dir: String) -> String:
+  Bool.pick(String, Cli.given(opts, "db"), parent_dir(normalized(absolute(Maybe.default(&2, String, Cli.value(opts, "db"), ""), cwd))), Bool.pick(String, String.is_empty(env_of(env, "BD_DB")), "", parent_dir(normalized(absolute(env_of(env, "BD_DB"), dir)))))
+
+# S2.1 (spec twin) the database file name an override gives, "" without one
+def db_file(+opts: List<&2, Cli.Occ>, +env: List<&2, Var>) -> String:
+  remainder_after(Resolve.cut_last(Bool.pick(String, Cli.given(opts, "db"), Maybe.default(&2, String, Cli.value(opts, "db"), ""), env_of(env, "BD_DB")), 47))
+
+# S2.1 S5.56 (spec twin) the `database:` path `where` prints: the override's file in the workspace directory
+# (`where_db_override`), else `<dir>/beads.db`
+def db_path(+opts: List<&2, Cli.Occ>, +env: List<&2, Var>, +dir: String) -> String:
+  Bool.pick(String, String.is_empty(db_file(opts, env)), dir ++ "/beads.db", dir ++ "/" ++ db_file(opts, env))
+
+# S1.60 S5.56 (spec twin) the `jsonl:` path `where` prints: `BEADS_JSONL` as given unless it resolves to the default
+# store (`env_beads_jsonl_where`), else `<dir>/issues.jsonl`; `store` is the absolute path the shell read. `where`
+# refuses none of the paths the other commands do
+def jsonl_shown(+given: String, store: String, +dir: String) -> String:
+  Bool.pick(String, (String.is_empty(given) || String.eq(normalized(store), dir ++ "/issues.jsonl")), dir ++ "/issues.jsonl", given)
+
+# S2.1 S5.56 (spec twin) does `where` note a redirect: a relative `BEADS_DIR`, or a relative override that names its
+# `.beads` directory by a component (`--db ./.beads/x.db where`)
+def where_relative(+opts: List<&2, Cli.Occ>, +env: List<&2, Var>, +cwd: String) -> Bool:
+  ((Bool.not(String.is_empty(String.trim(env_of(env, "BEADS_DIR")))) && Bool.not(String.starts_with(env_of(env, "BEADS_DIR"), "/"))) || (Bool.not(String.is_empty(db_named(opts, env))) && Bool.not(String.starts_with(db_named(opts, env), "/")) && Bool.not(String.is_empty(db_beads(db_named(opts, env), cwd)))))
+
+# ---------------------------------------------------------------- dispatch on a loaded store
+
+# S1 S4 S5 (spec twin) one ported command on a loaded store. `show` reads the file's records as they are
+# (S2.38, S2.39); every other command reads the loaded model (Store.model). `n` is the command's number
+# (`command_number`); 0 is a command that is not ported, which answers the port's own failure
+def command_at(n: U32, c: Call, issues: List<&2, Model.Issue>, +prefix: String) -> Outcome:
+  match n c:
+    case 1 Call{path, +opts, words, +json, quiet, touched, +env, cwd}:
+      list_cmd(opts, Store.model(issues), json, csv_mode(opts, env, json), quiet, False{}, Show.pinned(now_of(env)))
+    case 2 Call{path, +opts, words, json, quiet, touched, env, cwd}:
+      count_cmd(opts, Store.model(issues), json, quiet, Nat.is_gt(List.length(&2, String, selectors(opts)), 1n))
+    case 3 Call{path, opts, words, +json, quiet, touched, +env, cwd}:
+      shown(Show.run(words, issues, touched_text(Bytes.decode(touched)), env_of(env, "USER"), now_of(env), Show.width_of(env_of(env, "COLUMNS"), Cli.given(opts, "no-wrap")), prefix, json), json, quiet)
+    case 4 Call{path, +opts, +words, +json, quiet, touched, +env, cwd}:
+      search_cmd(opts, Store.model(issues), first_word(words), json, csv_mode(opts, env, json), quiet, String.is_empty(first_word(words)), U32.is_eq(Query.sort_key(Cli.value(opts, "sort")), 9))
+    case 5 Call{path, +opts, words, json, quiet, touched, env, cwd}:
+      ready_cmd(opts, Store.model(issues), env, json, quiet, prefix)
+    case 6 Call{path, +opts, words, json, quiet, touched, env, cwd}:
+      blocked_cmd(opts, Store.model(issues), json, quiet, Cli.given(opts, "detailed"), spec_of(env))
+    case 7 Call{path, +opts, words, json, quiet, touched, env, cwd}:
+      stats_cmd(opts, Store.model(issues), env, json, quiet, Cli.given(opts, "activity"))
+    case 8 Call{path, opts, words, json, quiet, touched, env, cwd}:
+      dep_list_cmd(opts, Store.model(issues), first_word(words), prefix, json, quiet)
+    case 9 Call{path, opts, words, json, quiet, touched, env, cwd}:
+      dep_tree_cmd(opts, Store.model(issues), first_word(words), prefix, json, quiet)
+    case 10 Call{path, +opts, words, +json, quiet, touched, env, cwd}:
+      viewed(Views.dep_cycles(Store.model(issues), Cli.given(opts, "blocking-only"), Cli.given(opts, "include-closed"), json), json, quiet)
+    case 11 Call{path, opts, words, json, quiet, touched, env, cwd}:
+      label_list_cmd(Store.model(issues), words, prefix, json, quiet)
+    case 12 Call{path, opts, words, +json, quiet, touched, env, cwd}:
+      viewed(Views.label_list_all(Store.model(issues), json), json, quiet)
+    case 13 Call{path, opts, words, json, quiet, touched, env, cwd}:
+      comments_list_cmd(Store.model(issues), words, prefix, json, quiet)
+    case 14 Call{path, opts, words, +json, quiet, touched, env, cwd}:
+      viewed(Views.epic_status(Store.model(issues), Cli.given(opts, "eligible-only"), json, spec_of(env)), json, quiet)
+    case 15 Call{path, +opts, words, +json, quiet, touched, +env, +cwd}:
+      viewed(Views.whereabouts(beads_dir_of(env, cwd), Prefix.reported(Prefix.configured(env_of(env, ".beads/config.yaml")), issues), json, where_relative(opts, env, cwd), db_path(opts, env, beads_dir_of(env, cwd)), jsonl_shown(jsonl_given(env), env_of(env, "BEADS_BEND_STORE"), beads_dir_of(env, cwd))), json, quiet)
+    case 16 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      create_cmd(Show.pinned(now_of(env)), opts, words, issues, env, cwd, json, quiet, Cli.given(opts, "file"), False{})
+    case 17 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      create_cmd(Show.pinned(now_of(env)), opts, words, issues, env, cwd, json, quiet, False{}, True{})
+    case 19 Call{path, +opts, words, +json, quiet, touched, +env, cwd}:
+      bypassed(bypass_refusal(opts), json, transition(0, Show.pinned(now_of(env)), False{}, Show.wanted(words, touched_text(Bytes.decode(touched))), opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet))
+    case 20 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      transition(1, Show.pinned(now_of(env)), False{}, Show.wanted(words, touched_text(Bytes.decode(touched))), opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
+    case 21 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      transition(2, Show.pinned(now_of(env)), False{}, words, opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
+    case 22 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      transition(3, Show.pinned(now_of(env)), False{}, words, opts, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
+    case 18 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      update_cmd(Show.pinned(now_of(env)), opts, Show.wanted(words, touched_text(Bytes.decode(touched))), issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet, Create.context_of(Cli.value(opts, "agent-context")), terminal_word(Model.lowered(String.trim(Maybe.default(&2, String, Cli.value(opts, "status"), "")))), file_read(env, Cli.value(opts, "description-file")))
+    case 23 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      edge_cmd(True{}, Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
+    case 24 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      edge_cmd(False{}, Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet)
+    case 25 Call{path, opts, words, json, quiet, touched, +env, cwd}:
+      label_cmd(True{}, Show.pinned(now_of(env)), opts, words, issues, prefix, json, quiet)
+    case 26 Call{path, opts, words, json, quiet, touched, +env, cwd}:
+      label_cmd(False{}, Show.pinned(now_of(env)), opts, words, issues, prefix, json, quiet)
+    case 27 Call{path, opts, words, json, quiet, touched, +env, cwd}:
+      rename_cmd(Show.pinned(now_of(env)), words, issues, json, quiet)
+    case 28 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      comment_cmd(Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), author_env(env)), prefix, json, quiet, False{}, file_read(env, Cli.value(opts, "file")))
+    case 30 Call{path, +opts, words, json, quiet, touched, +env, cwd}:
+      epic_close_cmd(Show.pinned(now_of(env)), opts, Store.model(issues), json, quiet, actor_of(Cli.value(opts, "actor"), actor_env(env)))
+    case 29 Call{path, +opts, words, json, quiet, +touched, +env, cwd}:
+      delete_cmd(Show.pinned(now_of(env)), opts, words, issues, actor_of(Cli.value(opts, "actor"), actor_env(env)), prefix, json, quiet, touched_text(Bytes.decode(touched)), file_read(env, Cli.value(opts, "from-file")))
+    case _ Call{path, opts, words, json, quiet, touched, env, cwd}:
+      failed(Failure.unported(), json)
 
 # S2.10 S2.14 (spec twin) the command, once the prefix new ids take is known: a configured prefix that sanitizes to
 # nothing refuses every command but `where`, which reports the raw value (`error_prefix_config_bad_list`,
@@ -2029,22 +2184,39 @@ def call_env(c: Call) -> List<&2, Var>:
     case Call{path, opts, words, json, quiet, touched, env, cwd}:
       env
 
-# S1.57 S2.8 S9.8 (spec twin) no workspace: NOT_INITIALIZED, or, when `BEADS_DIR` is set and not blank, CONFIG_ERROR
-# exit 7 naming it as given (`env_beads_dir_missing`; round 21: `" /mnt/proj/.beads "` keeps its spaces)
-def no_workspace(+beads_dir: String) -> Failure.Failure:
-  Bool.pick(Failure.Failure, String.is_empty(String.trim(beads_dir)), Failure.not_initialized(), Failure.Failure{"CONFIG_ERROR", "Configuration error: BEADS_DIR not found or not a .beads directory: " ++ beads_dir, None{}, False{}, Nil{}, 7})
+# S1.57 S2.8 S2.9 S9.8 (spec twin) no workspace: under a database override, its refusal (S2.9); else NOT_INITIALIZED,
+# or, when `BEADS_DIR` is set and not blank, CONFIG_ERROR exit 7 naming it as given (`env_beads_dir_missing`; round
+# 21: `" /mnt/proj/.beads "` keeps its spaces)
+def no_workspace(+beads_dir: String, +db: String, +cwd: String) -> Failure.Failure:
+  Bool.pick(Failure.Failure, String.is_empty(db), Bool.pick(Failure.Failure, String.is_empty(String.trim(beads_dir)), Failure.not_initialized(), Failure.Failure{"CONFIG_ERROR", "Configuration error: BEADS_DIR not found or not a .beads directory: " ++ beads_dir, None{}, False{}, Nil{}, 7}), db_unfound(db, db_beads(db, cwd)))
 
 # S2.4 (spec twin) is a `BEADS_DIR` directory named `.beads` or `_beads`
 def beads_named(+dir: String) -> Bool:
   (String.ends_with(dir, "/.beads") || String.ends_with(dir, "/_beads"))
 
+# S1.60 S2.24 (spec twin) a refused `BEADS_JSONL` store is CONFIG_ERROR exit 7 for every command but `where`; otherwise
+# the store is decoded, the messages quoting its path (`<root>/.beads/issues.jsonl` without the variable)
+def jsonl_routed(+reason: String, +c: Call, cwd: String, store: List<&2, U32>) -> Outcome:
+  Bool.pick(Outcome, (String.is_empty(reason) || String.eq(path_of(c), "where")), decoded(Bytes.decode(store), Bool.pick(String, String.is_empty(jsonl_given(call_env(c))), cwd ++ "/.beads/issues.jsonl", env_of(call_env(c), "BEADS_BEND_STORE")), c), failed(Failure.Failure{"CONFIG_ERROR", "Configuration error: " ++ reason, None{}, False{}, Nil{}, 7}, wants_json(c)))
+
+# S2.1 (spec twin) a database override whose directory is not the workspace directory makes the original read
+# `<that directory>/issues.jsonl` with command-dependent results the corpus does not pin (OQ-137, PLAN §3): the port's
+# own refusal. Otherwise the `BEADS_JSONL` checks (the shell passes the store path it read as `BEADS_BEND_STORE`, and
+# whether that file's directory opened as `BEADS_BEND_STORE_DIR`)
+def db_routed(off: Bool, +c: Call, +cwd: String, store: List<&2, U32>) -> Outcome:
+  match off:
+    case True{}:
+      failed(Failure.unported(), wants_json(c))
+    case False{}:
+      jsonl_routed(jsonl_problem(String.is_empty(jsonl_given(call_env(c))), jsonl_given(call_env(c)), env_of(call_env(c), "BEADS_BEND_STORE"), beads_dir_of(call_env(c), cwd), String.eq(env_of(call_env(c), "BEADS_BEND_STORE_DIR"), "1")), c, cwd, store)
+
 # S2.1 S9.8 (spec twin) route on the workspace verdict; the store path the messages quote is absolute
-def workspace_routed(workspace: Bool, +c: Call, cwd: String, store: List<&2, U32>) -> Outcome:
+def workspace_routed(workspace: Bool, +c: Call, +cwd: String, store: List<&2, U32>) -> Outcome:
   match workspace:
     case False{}:
-      failed(no_workspace(env_of(call_env(c), "BEADS_DIR")), wants_json(c))
+      failed(no_workspace(env_of(call_env(c), "BEADS_DIR"), db_named(opts_of(c), call_env(c)), cwd), wants_json(c))
     case True{}:
-      decoded(Bytes.decode(store), cwd ++ "/.beads/issues.jsonl", c)
+      db_routed((Bool.not(String.is_empty(db_dir(opts_of(c), call_env(c), cwd, beads_dir_of(call_env(c), cwd)))) && Bool.not(String.eq(db_dir(opts_of(c), call_env(c), cwd, beads_dir_of(call_env(c), cwd)), beads_dir_of(call_env(c), cwd)))), c, cwd, store)
 
 # S2.5 (spec twin) a redirect whose target did not open refuses every command that needs the workspace, before the
 # store is read (the shell passes the core's reason in `BEADS_BEND_REDIRECT_ERROR`)

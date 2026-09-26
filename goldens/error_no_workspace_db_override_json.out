@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "NOT_INITIALIZED",
+    "message": "Cannot resolve the project .beads directory for database override 'x.db'; run from the target workspace or set BEADS_DIR: Beads not initialized: run 'br init' first",
+    "hint": "Run: br init",
+    "retryable": false,
+    "context": {
+      "wrapper_context": "Cannot resolve the project .beads directory for database override 'x.db'; run from the target workspace or set BEADS_DIR"
+    }
+  }
+}

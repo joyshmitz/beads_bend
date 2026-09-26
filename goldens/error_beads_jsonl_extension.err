@@ -1,0 +1,1 @@
+Error: Configuration error: Path '/mnt/proj/.beads/config.yaml' has disallowed extension 'yaml' (allowed: ["db", "db-wal", "db-wal-cert", "db-wal-cert-head", "db-shm", "db-journal", "db-fsqlite-ns-gate", "db-fsqlite-ns-use", "jsonl", "jsonl.tmp"], plus pid-scoped '*.jsonl.<pid>.tmp')

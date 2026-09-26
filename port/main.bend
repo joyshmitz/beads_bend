@@ -183,31 +183,31 @@ def write_opened(r: Result<&1, &1, U32 & String, File>, text: String) -> IO(Unit
         written(got)
 
 # S5.1 S5.17 S8.30 (shell) one file change: the whole new text (the file is created or truncated), or a removal
-def change(+dir: String, w: Run.Write) -> IO(Unit):
+def change(+dir: String, +store: String, w: Run.Write) -> IO(Unit):
   match w:
     case Run.Write{path, None{}}:
-      Sys.remove(Run.relocated(dir, path))
+      Sys.remove(Run.relocated(dir, store, path))
     case Run.Write{path, Some{text}}:
       do IO<Unit>:
-        r : Result<&1, &1, U32 & String, File> <- File.open(Run.relocated(dir, path), "w")
+        r : Result<&1, &1, U32 & String, File> <- File.open(Run.relocated(dir, store, path), "w")
         write_opened(r, text)
 
 # S5.18 S8.30 (shell) the file changes in the order the core gave them: the store before the sidecar
-def change_all(+dir: String, ws: List<&2, Run.Write>) -> IO(Unit):
+def change_all(+dir: String, +store: String, ws: List<&2, Run.Write>) -> IO(Unit):
   match ws:
     case Nil{}:
       IO.pure(Unit, Unit{})
     case Con{w, rest}:
       do IO<Unit>:
-        change(dir, w)
-        change_all(dir, rest)
+        change(dir, store, w)
+        change_all(dir, store, rest)
 
 # S8.30 S8.34 S8.36 (shell) perform the outcome: the files, then stdout, then stderr, then the exit code
-def perform(+dir: String, o: Run.Outcome) -> IO(Unit):
+def perform(+dir: String, +store: String, o: Run.Outcome) -> IO(Unit):
   match o:
     case Run.Outcome{out, +err, +code, writes}:
       do IO<Unit>:
-        change_all(dir, writes)
+        change_all(dir, store, writes)
         IO.write(out)
         emit_err(err, String.is_empty(err))
         leave(code, U32.is_eq(code, 0))
@@ -278,16 +278,22 @@ def stdin_all(wanted: Bool) -> IO(List<&2, Run.Var>):
         text : String <- Sys.stdin()
         return Run.stdin_var(text) <> Nil{}
 
-# S8.1 S8.12 S8.13 S4.397 (shell) read the workspace's files and the files the argv names, call the core once, perform
-def run_argv(+argv: List<&2, String>, +cwd: String, env: List<&2, Run.Var>, +dir: String) -> IO(Unit):
+# S1.60 S8.1 S8.12 S8.13 S4.397 (shell) read the store at the path the core named (Run.store_file) and test that its
+# directory opens, read the workspace's other files and the files the argv names, call the core once, perform
+def run_stored(+argv: List<&2, String>, +cwd: String, env: List<&2, Run.Var>, +dir: String, +file: String) -> IO(Unit):
   do IO<Unit>:
-    store : List<&2, U32> <- read_all(Run.inside(dir, "issues.jsonl"))
+    store : List<&2, U32> <- read_all(file)
+    parent : Bool <- probe(Run.store_dir(file))
     touched : List<&2, U32> <- read_all(Run.inside(dir, "last-touched"))
     config : List<&2, U32> <- read_all(Run.inside(dir, "config.yaml"))
     sides : List<&2, Run.Var> <- side_all(Run.side_files(argv))
     input : List<&2, Run.Var> <- stdin_all(Run.wants_stdin(argv))
     wall : String <- Clock.wall()
-    perform(dir, Run.outcome(Run.Inputs{argv, Bool.not(String.is_empty(dir)), Run.root_of(dir, cwd), store, touched, Run.Var{"BEADS_BEND_WALL", wall} <> Run.Var{"BEADS_BEND_DIR", dir} <> Run.file_var(".beads/config.yaml", config) <> List.append(&2, Run.Var, input, List.append(&2, Run.Var, sides, env))}))
+    perform(dir, file, Run.outcome(Run.Inputs{argv, Bool.not(String.is_empty(dir)), Run.root_of(dir, cwd), store, touched, Run.Var{"BEADS_BEND_WALL", wall} <> Run.Var{"BEADS_BEND_DIR", dir} <> Run.Var{"BEADS_BEND_STORE", file} <> Run.Var{"BEADS_BEND_STORE_DIR", Run.opened(parent)} <> Run.file_var(".beads/config.yaml", config) <> List.append(&2, Run.Var, input, List.append(&2, Run.Var, sides, env))}))
+
+# S8.1 S1.60 (shell) run a command in the workspace discovery settled on, with its store where the core names it
+def run_argv(+argv: List<&2, String>, +cwd: String, +env: List<&2, Run.Var>, +dir: String) -> IO(Unit):
+  run_stored(argv, cwd, env, dir, Run.store_file(dir, cwd, env))
 
 # S8.1 (shell) run in the directory discovery settled on
 def run_in(args: List<&2, String>, +cwd: String, env: List<&2, Run.Var>, +dir: String) -> IO(Unit):

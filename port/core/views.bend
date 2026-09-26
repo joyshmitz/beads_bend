@@ -1089,13 +1089,14 @@ def prefix_line(prefix: Maybe<&2, String>) -> String:
 # S5.56 S5.200 (spec twin) `where`: the `.beads` directory, the prefix, the path `beads.db` would have (printed even
 # though `--no-db` never creates it), and the store; `relative` (a relative `BEADS_DIR`) adds the redirect note, the
 # directory naming itself (round 21: `BEADS_DIR=.beads where` prints `  (via redirect from /mnt/proj/.beads)`, and
-# `redirected_from` under `--json`)
-def whereabouts(+dir: String, prefix: Maybe<&2, String>, json: Bool, relative: Bool) -> View:
+# `redirected_from` under `--json`). `db` and `jsonl` are the two paths as the overrides of S1.60 and S2.1 leave them
+# (`<dir>/beads.db` and `<dir>/issues.jsonl` without one)
+def whereabouts(+dir: String, prefix: Maybe<&2, String>, json: Bool, relative: Bool, db: String, jsonl: String) -> View:
   match json:
     case True{}:
-      ViewOk{String.concat(["{\"path\":", Failure.quoted(dir), Bool.pick(String, relative, ",\"redirected_from\":" ++ Failure.quoted(dir), ""), prefix_member(prefix), ",\"database_path\":", Failure.quoted(dir ++ "/beads.db"), ",\"jsonl_path\":", Failure.quoted(dir ++ "/issues.jsonl"), "}\n"])}
+      ViewOk{String.concat(["{\"path\":", Failure.quoted(dir), Bool.pick(String, relative, ",\"redirected_from\":" ++ Failure.quoted(dir), ""), prefix_member(prefix), ",\"database_path\":", Failure.quoted(db), ",\"jsonl_path\":", Failure.quoted(jsonl), "}\n"])}
     case False{}:
-      ViewOk{String.concat([dir, "\n", Bool.pick(String, relative, "  (via redirect from " ++ dir ++ ")\n", ""), prefix_line(prefix), "  database: ", dir, "/beads.db\n  jsonl: ", dir, "/issues.jsonl\n"])}
+      ViewOk{String.concat([dir, "\n", Bool.pick(String, relative, "  (via redirect from " ++ dir ++ ")\n", ""), prefix_line(prefix), "  database: ", db, "\n  jsonl: ", jsonl, "\n"])}
 
 # S4.187 (spec twin) the witnesses of a finished search, back in ascending order
 def wits_of(c: Comps) -> List<&2, Wit>:

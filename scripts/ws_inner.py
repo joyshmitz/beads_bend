@@ -22,6 +22,7 @@ WS = Path("/mnt/proj")
 DEFAULT_TIME = "2026-01-02 03:04:05"
 STATE_FILES = ("issues.jsonl", "last-touched")
 FAKETIME_LIB = "toolchain/faketime/root/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1"
+ORACLE_SHA256 = "21b967c1ae68df1a2e8eb2256d13b8e57d293d89e331933919076104832ddbc0"  # br 0.6.0, PLAN §2
 PASSED_ENV = ("PATH", "HOME", "USER", "TZ", "NO_COLOR", "RUST_LOG", "BEND_NO_TELEMETRY", "BEND_BIN")
 STEP_TIMEOUT = 600  # seconds per step; a fully frozen clock once hung `br` forever.
 # 600, not the original 120: the interpreter lane type-checks the whole book on
@@ -234,6 +235,24 @@ def listing():
     sys.stdout.buffer.flush()
 
 
+def oracle_checked(program):
+    """The pin (PLAN §2, docs/PIN.toml): the original is the br 0.6.0 release
+    binary with this sha256, and nothing else. A different `br` first on PATH
+    (on 2026-09-25 the installed one became br 0.7.0) would silently re-pin
+    every capture, so the step is refused as a sandbox failure (exit 125,
+    INCONCLUSIVE) before it runs."""
+    path = shutil.which(program)
+    if path is None:
+        die(f"oracle {program!r} not found on PATH")
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    if digest.hexdigest() != ORACLE_SHA256:
+        die(f"oracle {path} is not the pinned br 0.6.0 (sha256 {digest.hexdigest()[:16]}…, "
+            f"expected {ORACLE_SHA256[:16]}…); put the pinned binary first on PATH")
+
+
 def main():
     args = sys.argv[1:]
     oracle = bool(args) and args[0] == "--oracle"
@@ -245,6 +264,8 @@ def main():
     inner, case = args[:cut], args[cut + 1:]
     if not inner:
         die("empty inner command")
+    if oracle:
+        oracle_checked(inner[0])
     root = Path(os.environ.get("WS_ROOT", ""))
     if not (root / "goldens").is_dir():
         die("WS_ROOT does not name the port root")
